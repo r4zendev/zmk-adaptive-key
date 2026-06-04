@@ -22,6 +22,12 @@ properties:
     type: int
     description: |
       Keycode to press when delete-prior is set.
+  skip-magic:
+    type: boolean
+    description: |
+      If set, triggers match against the second-to-last keycode instead of the
+      last keycode. When no trigger matches and a second-to-last keycode exists,
+      that keycode is repeated (skip-repeat fallback).
 
 child-binding:
   description: "An adaptive key condition"

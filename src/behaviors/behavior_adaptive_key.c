@@ -56,16 +56,22 @@ struct behavior_adaptive_key_config {
     const struct trigger_cfg *triggers;
     const struct key_list *dead_keys;
     uint32_t delete_keycode;
+    bool skip_magic;
 };
 
 struct behavior_adaptive_key_data {
     const struct binding_list *pressed_bindings;
+    struct zmk_keycode_state_changed skip_repeat_ev;
+    bool using_skip_repeat;
 };
 
-// Global state.
+// Global state: 2-key history.
 struct zmk_key_param last_keycode;
 int64_t last_timestamp;
 bool last_keycode_is_dead;
+
+struct zmk_key_param prev_keycode;
+int64_t prev_timestamp;
 
 static inline int press_adaptive_key_behavior(const struct behavior_adaptive_key_data *data,
                                               struct zmk_behavior_binding_event *event) {
@@ -114,7 +120,8 @@ static bool keys_are_equal(const struct zmk_key_param *key, const struct zmk_key
 }
 
 static bool trigger_is_true(const struct trigger_cfg *trigger,
-                            struct behavior_adaptive_key_data *data, int64_t timestamp) {
+                            struct behavior_adaptive_key_data *data, int64_t timestamp,
+                            bool skip_magic) {
     if (trigger->min_idle_ms > -1 && (timestamp - last_timestamp) < trigger->min_idle_ms) {
         return false;
     }
@@ -123,8 +130,10 @@ static bool trigger_is_true(const struct trigger_cfg *trigger,
         return false;
     }
 
+    const struct zmk_key_param *check_key = skip_magic ? &prev_keycode : &last_keycode;
+
     for (int i = 0; i < trigger->trigger_keys_len; i++) {
-        if (keys_are_equal(&trigger->trigger_keys[i], &last_keycode, trigger->strict_modifiers)) {
+        if (keys_are_equal(&trigger->trigger_keys[i], check_key, trigger->strict_modifiers)) {
             data->pressed_bindings = &trigger->bindings;
             return true;
         }
@@ -149,13 +158,27 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
             "implicit_mods 0x%02X",
             last_keycode.page, last_keycode.id, last_keycode.modifiers);
     for (int i = 0; i < config->triggers_len; i++) {
-        if (trigger_is_true(&config->triggers[i], data, event.timestamp)) {
+        if (trigger_is_true(&config->triggers[i], data, event.timestamp, config->skip_magic)) {
             match = true;
             break;
         }
     }
 
     if (!match) {
+        if (config->skip_magic && prev_keycode.page) {
+            LOG_DBG("Skip-magic fallback: repeating prev_keycode 0x%02X", prev_keycode.id);
+            data->skip_repeat_ev = (struct zmk_keycode_state_changed){
+                .usage_page = prev_keycode.page,
+                .keycode = prev_keycode.id,
+                .implicit_modifiers = prev_keycode.modifiers,
+                .explicit_modifiers = 0,
+                .state = true,
+                .timestamp = k_uptime_get(),
+            };
+            data->using_skip_repeat = true;
+            raise_zmk_keycode_state_changed(data->skip_repeat_ev);
+            return ZMK_BEHAVIOR_OPAQUE;
+        }
         LOG_DBG("No adaptive key match found, invoking default behavior");
         data->pressed_bindings = &config->default_binding;
     }
@@ -168,6 +191,14 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
                                       struct zmk_behavior_binding_event event) {
     const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
     struct behavior_adaptive_key_data *data = dev->data;
+
+    if (data->using_skip_repeat) {
+        data->skip_repeat_ev.state = false;
+        data->skip_repeat_ev.timestamp = k_uptime_get();
+        raise_zmk_keycode_state_changed(data->skip_repeat_ev);
+        data->using_skip_repeat = false;
+        return ZMK_BEHAVIOR_OPAQUE;
+    }
 
     if (data->pressed_bindings) {
         release_adaptive_key_behavior(data, &event);
@@ -237,6 +268,10 @@ static int adaptive_key_keycode_state_changed_listener(const zmk_event_t *eh) {
         }
     }
 
+    // Shift 2-key history before updating.
+    prev_keycode = last_keycode;
+    prev_timestamp = last_timestamp;
+
     last_keycode = key;
     last_timestamp = ev->timestamp;
 
@@ -303,6 +338,7 @@ static int behavior_adaptive_key_init(const struct device *dev) {
         .triggers = adaptive_key_triggers_##n,                                                     \
         .triggers_len = ARRAY_SIZE(adaptive_key_triggers_##n),                                     \
         .dead_keys = &adaptive_key_ignore_keys_##n,                                                \
+        .skip_magic = DT_INST_PROP(n, skip_magic),                                                 \
     };                                                                                             \
     BEHAVIOR_DT_INST_DEFINE(n, behavior_adaptive_key_init, NULL, &behavior_adaptive_key_data_##n,  \
                             &behavior_adaptive_key_config_##n, POST_KERNEL,                        \
