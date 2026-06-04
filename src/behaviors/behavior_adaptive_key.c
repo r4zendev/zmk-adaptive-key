@@ -43,6 +43,8 @@ struct trigger_cfg {
     struct binding_list bindings;
     size_t trigger_keys_len;
     const struct zmk_key_param trigger_keys[CONFIG_ZMK_ADAPTIVE_KEY_MAX_TRIGGER_CONDITIONS];
+    size_t prior_trigger_keys_len;
+    const struct zmk_key_param prior_trigger_keys[CONFIG_ZMK_ADAPTIVE_KEY_MAX_TRIGGER_CONDITIONS];
     int min_idle_ms;
     int max_idle_ms;
     bool delete_prior;
@@ -132,14 +134,34 @@ static bool trigger_is_true(const struct trigger_cfg *trigger,
 
     const struct zmk_key_param *check_key = skip_magic ? &prev_keycode : &last_keycode;
 
+    bool last_match = false;
     for (int i = 0; i < trigger->trigger_keys_len; i++) {
         if (keys_are_equal(&trigger->trigger_keys[i], check_key, trigger->strict_modifiers)) {
-            data->pressed_bindings = &trigger->bindings;
-            return true;
+            last_match = true;
+            break;
+        }
+    }
+    if (!last_match) {
+        return false;
+    }
+
+    // AND-gate on the second-to-last keycode when prior-trigger-keys is set.
+    if (trigger->prior_trigger_keys_len > 0) {
+        bool prior_match = false;
+        for (int i = 0; i < trigger->prior_trigger_keys_len; i++) {
+            if (keys_are_equal(&trigger->prior_trigger_keys[i], &prev_keycode,
+                               trigger->strict_modifiers)) {
+                prior_match = true;
+                break;
+            }
+        }
+        if (!prior_match) {
+            return false;
         }
     }
 
-    return false;
+    data->pressed_bindings = &trigger->bindings;
+    return true;
 }
 
 static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
@@ -308,6 +330,9 @@ static int behavior_adaptive_key_init(const struct device *dev) {
         .bindings = TRANSFORMED_BINDINGS(n),                                                       \
         .trigger_keys_len = DT_PROP_LEN(n, prop),                                                  \
         .trigger_keys = {LISTIFY(DT_PROP_LEN(n, prop), KEY_TRIGGER_ITEM, (, ), n, prop)},          \
+        .prior_trigger_keys_len = DT_PROP_LEN(n, prior_trigger_keys),                              \
+        .prior_trigger_keys = {LISTIFY(DT_PROP_LEN(n, prior_trigger_keys), KEY_TRIGGER_ITEM,       \
+                                       (, ), n, prior_trigger_keys)},                              \
         .min_idle_ms = DT_PROP(n, min_prior_idle_ms),                                              \
         .max_idle_ms = DT_PROP(n, max_prior_idle_ms),                                              \
         .strict_modifiers = DT_PROP(n, strict_modifiers),                                          \

@@ -39,6 +39,13 @@ child-binding:
     trigger-keys:
       type: array
       required: true
+    prior-trigger-keys:
+      type: array
+      default: []
+      description: |
+        Optional. When non-empty, the trigger fires only if the second-to-last
+        keycode matches one of these, in addition to trigger-keys matching the
+        last keycode. Enables AND-gated 2-keycode (prev + last) adaptive matching.
     max-prior-idle-ms:
       type: int
       default: -1
