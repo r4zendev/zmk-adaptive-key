@@ -45,6 +45,8 @@ struct trigger_cfg {
     const struct zmk_key_param trigger_keys[CONFIG_ZMK_ADAPTIVE_KEY_MAX_TRIGGER_CONDITIONS];
     size_t prior_trigger_keys_len;
     const struct zmk_key_param prior_trigger_keys[CONFIG_ZMK_ADAPTIVE_KEY_MAX_TRIGGER_CONDITIONS];
+    size_t prior_keys_len;
+    const struct zmk_key_param prior_keys[CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH];
     int min_idle_ms;
     int max_idle_ms;
     bool delete_prior;
@@ -74,6 +76,10 @@ bool last_keycode_is_dead;
 
 struct zmk_key_param prev_keycode;
 int64_t prev_timestamp;
+
+// Deeper typed-key history for prior-keys sequence matching.
+// history[0] mirrors last_keycode, history[1] mirrors prev_keycode, and so on.
+static struct zmk_key_param history[CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH];
 
 static inline int press_adaptive_key_behavior(const struct behavior_adaptive_key_data *data,
                                               struct zmk_behavior_binding_event *event) {
@@ -157,6 +163,19 @@ static bool trigger_is_true(const struct trigger_cfg *trigger,
         }
         if (!prior_match) {
             return false;
+        }
+    }
+
+    // Ordered sequence match further back (prior-keys), in typing order ending
+    // just before the trigger-keys match: prior_keys[last] == history[1] (prev),
+    // prior_keys[last-1] == history[2], and so on.
+    if (trigger->prior_keys_len > 0) {
+        for (int i = 0; i < trigger->prior_keys_len; i++) {
+            const struct zmk_key_param *want =
+                &trigger->prior_keys[trigger->prior_keys_len - 1 - i];
+            if (!keys_are_equal(want, &history[1 + i], trigger->strict_modifiers)) {
+                return false;
+            }
         }
     }
 
@@ -297,6 +316,12 @@ static int adaptive_key_keycode_state_changed_listener(const zmk_event_t *eh) {
     last_keycode = key;
     last_timestamp = ev->timestamp;
 
+    // Shift the deeper history in lockstep (history[0] == last_keycode).
+    for (int i = CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH - 1; i > 0; i--) {
+        history[i] = history[i - 1];
+    }
+    history[0] = key;
+
     last_keycode_is_dead = is_dead(&key) && !last_keycode_is_dead;
     if (last_keycode_is_dead) {
         return ZMK_EV_EVENT_HANDLED;
@@ -333,6 +358,8 @@ static int behavior_adaptive_key_init(const struct device *dev) {
         .prior_trigger_keys_len = DT_PROP_LEN(n, prior_trigger_keys),                              \
         .prior_trigger_keys = {LISTIFY(DT_PROP_LEN(n, prior_trigger_keys), KEY_TRIGGER_ITEM,       \
                                        (, ), n, prior_trigger_keys)},                              \
+        .prior_keys_len = DT_PROP_LEN(n, prior_keys),                                              \
+        .prior_keys = {LISTIFY(DT_PROP_LEN(n, prior_keys), KEY_TRIGGER_ITEM, (, ), n, prior_keys)}, \
         .min_idle_ms = DT_PROP(n, min_prior_idle_ms),                                              \
         .max_idle_ms = DT_PROP(n, max_prior_idle_ms),                                              \
         .strict_modifiers = DT_PROP(n, strict_modifiers),                                          \

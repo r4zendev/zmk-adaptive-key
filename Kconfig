@@ -16,6 +16,10 @@ config ZMK_ADAPTIVE_KEY_TAP_MS
     int "Time to hold key presses when binding multiple behaviors"
     default 5
 
+config ZMK_ADAPTIVE_KEY_HISTORY_DEPTH
+    int "Typed-key history depth for prior-keys sequence matching"
+    default 6
+
 #Adaptive key options
 endmenu
 

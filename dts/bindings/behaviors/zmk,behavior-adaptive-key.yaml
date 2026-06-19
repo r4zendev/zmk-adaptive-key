@@ -46,6 +46,14 @@ child-binding:
         Optional. When non-empty, the trigger fires only if the second-to-last
         keycode matches one of these, in addition to trigger-keys matching the
         last keycode. Enables AND-gated 2-keycode (prev + last) adaptive matching.
+    prior-keys:
+      type: array
+      default: []
+      description: |
+        Optional ordered sequence of keycodes that must precede the trigger-keys
+        match, in typing order (oldest first). The last element must equal the key
+        just before the trigger match, the previous element the one before that, etc.
+        Enables N preceding keys: trigger-keys = <U> + prior-keys = <Y O> matches "you".
     max-prior-idle-ms:
       type: int
       default: -1
