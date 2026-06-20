@@ -17,7 +17,7 @@ config ZMK_ADAPTIVE_KEY_TAP_MS
     default 5
 
 config ZMK_ADAPTIVE_KEY_HISTORY_DEPTH
-    int "Typed-key history depth for prior-keys sequence matching"
+    int "Key history depth for prior-keys"
     default 6
 
 #Adaptive key options

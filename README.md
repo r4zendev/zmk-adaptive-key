@@ -193,6 +193,75 @@ This sets up a `shift-repeat` behavior that sends `&sk LSHFT` unless when
 pressed within 0.35 seconds of any alpha key, in which case it sends
 `&key_repeat`. Great for your homing thumb key!
 
+### Multi-key history
+
+By default a trigger only looks at the _last_ keycode. The following optional
+properties let a trigger also condition on keys typed before it.
+
+- **`prior-trigger-keys`** (trigger property): when set, the trigger fires only
+  if the _second-to-last_ keycode also matches one of these, on top of
+  `trigger-keys` matching the last keycode. This AND-gates a trigger on the last
+  two keys, e.g. distinguishing `ntc` from `atc`:
+
+  ```c
+  / {
+      behaviors {
+          ak: ak {
+              compatible = "zmk,behavior-adaptive-key";
+              #binding-cells = <0>;
+              bindings = <&kp C>;
+
+              // Only fire after "nt", not after "at".
+              ntc { trigger-keys = <T>; prior-trigger-keys = <N>; bindings = <&kp X>; };
+          };
+      };
+  };
+  ```
+
+- **`prior-keys`** (trigger property): an ordered sequence of keycodes that must
+  precede the trigger, oldest first. The last element is the key just before the
+  trigger match, the one before it the key before that, and so on. Combined with
+  `trigger-keys` this matches N preceding keys, e.g. `<Y O>` + `<U>` matches the
+  word `you`:
+
+  ```c
+  / {
+      behaviors {
+          ak: ak {
+              compatible = "zmk,behavior-adaptive-key";
+              #binding-cells = <0>;
+              bindings = <&kp U>;
+
+              // Matches the sequence "y", "o", "u".
+              you { trigger-keys = <U>; prior-keys = <Y O>; bindings = <&macro_you>; };
+          };
+      };
+  };
+  ```
+
+  The depth of available history is set by
+  `CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH` (defaults to 6).
+
+- **`skip-magic`** (`adaptive-key` property): when set, every trigger of the
+  instance matches against the _second-to-last_ keycode instead of the last one.
+  If no trigger matches, the second-to-last keycode is re-sent (skip-repeat
+  fallback). Useful to act on the key before the most recent one:
+
+  ```c
+  / {
+      behaviors {
+          ak: ak {
+              compatible = "zmk,behavior-adaptive-key";
+              #binding-cells = <0>;
+              bindings = <&kp SPACE>;
+              skip-magic;
+
+              trig { trigger-keys = <A>; bindings = <&kp B>; };
+          };
+      };
+  };
+  ```
+
 ## `Kconfig` settings
 
 - `CONFIG_ZMK_ADAPTIVE_KEY_MAX_TRIGGER_CONDITIONS`: Maximum number of trigger
@@ -203,6 +272,8 @@ pressed within 0.35 seconds of any alpha key, in which case it sends
   presses when binding a macro sequence. Defaults to 5ms.
 - `CONFIG_ZMK_ADAPTIVE_KEY_TAP_MS`: Hold time per key tap when binding a macro
   sequence. Defaults to 5ms.
+- `CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH`: Number of recent keycodes kept for
+  `prior-keys` matching. Defaults to 6.
 
 ## References
 

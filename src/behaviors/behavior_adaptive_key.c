@@ -69,7 +69,7 @@ struct behavior_adaptive_key_data {
     bool using_skip_repeat;
 };
 
-// Global state: 2-key history.
+// Global state.
 struct zmk_key_param last_keycode;
 int64_t last_timestamp;
 bool last_keycode_is_dead;
@@ -77,8 +77,6 @@ bool last_keycode_is_dead;
 struct zmk_key_param prev_keycode;
 int64_t prev_timestamp;
 
-// Deeper typed-key history for prior-keys sequence matching.
-// history[0] mirrors last_keycode, history[1] mirrors prev_keycode, and so on.
 static struct zmk_key_param history[CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH];
 
 static inline int press_adaptive_key_behavior(const struct behavior_adaptive_key_data *data,
@@ -151,7 +149,6 @@ static bool trigger_is_true(const struct trigger_cfg *trigger,
         return false;
     }
 
-    // AND-gate on the second-to-last keycode when prior-trigger-keys is set.
     if (trigger->prior_trigger_keys_len > 0) {
         bool prior_match = false;
         for (int i = 0; i < trigger->prior_trigger_keys_len; i++) {
@@ -166,9 +163,6 @@ static bool trigger_is_true(const struct trigger_cfg *trigger,
         }
     }
 
-    // Ordered sequence match further back (prior-keys), in typing order ending
-    // just before the trigger-keys match: prior_keys[last] == history[1] (prev),
-    // prior_keys[last-1] == history[2], and so on.
     if (trigger->prior_keys_len > 0) {
         for (int i = 0; i < trigger->prior_keys_len; i++) {
             const struct zmk_key_param *want =
@@ -207,7 +201,7 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
 
     if (!match) {
         if (config->skip_magic && prev_keycode.page) {
-            LOG_DBG("Skip-magic fallback: repeating prev_keycode 0x%02X", prev_keycode.id);
+            LOG_DBG("Skip-magic fallback");
             data->skip_repeat_ev = (struct zmk_keycode_state_changed){
                 .usage_page = prev_keycode.page,
                 .keycode = prev_keycode.id,
@@ -309,14 +303,12 @@ static int adaptive_key_keycode_state_changed_listener(const zmk_event_t *eh) {
         }
     }
 
-    // Shift 2-key history before updating.
     prev_keycode = last_keycode;
     prev_timestamp = last_timestamp;
 
     last_keycode = key;
     last_timestamp = ev->timestamp;
 
-    // Shift the deeper history in lockstep (history[0] == last_keycode).
     for (int i = CONFIG_ZMK_ADAPTIVE_KEY_HISTORY_DEPTH - 1; i > 0; i--) {
         history[i] = history[i - 1];
     }
